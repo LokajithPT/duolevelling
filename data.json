@@ -1,0 +1,8 @@
+{
+  "App.jsx": {
+    "filename": "App.jsx",
+    "typed": "const a = 1;",
+    "pasted": "someeffect(() =\u003e {})",
+    "real": "const a = 1;\nnigatron hhhh(() =\u003e {})"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "projects": [
+    {
+      "id": "react-basics",
+      "name": "React Basics",
+      "tasks": [
+        {
+          "id": "jsx-1",
+          "title": "JSX Intro",
+          "description": "Learn JSX syntax",
+          "status": false
+        },
+        {
+          "id": "hooks-1",
+          "title": "useState",
+          "description": "Learn useState hook",
+          "status": false
+        }
+      ]
+    }
+  ]
+}

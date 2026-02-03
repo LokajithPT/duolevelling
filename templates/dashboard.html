@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Duoserver Dashboard</title>
+  <style>
+    body {
+      font-family: monospace;
+      background: #0f0f0f;
+      color: #eaeaea;
+      padding: 20px;
+    }
+
+    .card {
+      border: 1px solid #333;
+      padding: 15px;
+      margin-bottom: 20px;
+      border-radius: 8px;
+      background: #161616;
+    }
+
+    .filename {
+      color: #7cffcb;
+      font-size: 18px;
+    }
+
+    .stat {
+      color: #ff8c8c;
+    }
+
+    pre {
+      background: #090909;
+      padding: 10px;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h1>Duoserver Dashboard</h1>
+
+  {{ if . }}
+  {{ range . }}
+  <div class="card">
+    <div class="filename">{{ .Filename }}</div>
+
+    <p class="stat">
+      Typed: {{ len .Typed }} chars |
+      Pasted: {{ len .Pasted }} chars |
+      Real: {{ len .Real }} chars
+    </p>
+
+    <h4>Typed</h4>
+    <pre>{{ .Typed }}</pre>
+
+    <h4>Pasted</h4>
+    <pre>{{ .Pasted }}</pre>
+
+    <h4>Final File</h4>
+    <pre>{{ .Real }}</pre>
+  </div>
+  {{ end }}
+  {{ else }}
+  <p>No submissions yet 👀</p>
+  {{ end }}
+
+</body>
+
+</html>
