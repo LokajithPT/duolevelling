@@ -7,7 +7,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 )
+
+/* =======================
+   DATA MODELS
+======================= */
 
 type Payload struct {
 	Filename string `json:"filename"`
@@ -25,7 +30,7 @@ type Task struct {
 	ID          string `json:"id"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
-	Done        bool   `json:"status"`
+	Status      string `json:"status"` // todo | checking | done
 }
 
 type Project struct {
@@ -44,228 +49,185 @@ type Streak struct {
 	StreakFreeze  int    `json:"streak_freeze"`
 }
 
-var streak Streak
+/* =======================
+   GLOBAL STATE
+======================= */
 
-var projectStore ProjectStore
+var (
+	projectStore ProjectStore
+	streak       Streak
+	submissions  = make(map[string]Payload)
+)
 
-var submissions = make(map[string]Payload)
+const dataFile = "data.json"
+
+/* =======================
+   MAIN
+======================= */
 
 func main() {
+	// pages
 	http.HandleFunc("/", homeHandler)
 	http.HandleFunc("/ping", pingHandler)
-	http.HandleFunc("/submit", submit)
 	http.HandleFunc("/dashboard", dashboard)
 
-	http.HandleFunc("/task-done", taskDoneHandler)
+	// plugin routes
+	http.HandleFunc("/submit", submit)
 	http.HandleFunc("/checkme", checkme)
 
-	err := loadSubmissions()
-	if err != nil {
-		log.Fatal("failed to load data:", err)
-	}
-
-	loadProjects()
-	loadStreak()
-
+	// api
 	http.HandleFunc("/api/projectlist", projectListHandler)
-	http.HandleFunc("/api/tasklist", taskListHandler)
 	http.HandleFunc("/api/abouttask", aboutTaskHandler)
 	http.HandleFunc("/taskstatus", taskStatusHandler)
 	http.HandleFunc("/streakstatus", streakStatusHandler)
 
-	fmt.Println("runnin the server in 8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	// load persistent data
+	must(loadProjects())
+	must(loadStreak())
+	must(loadSubmissions())
 
+	fmt.Println("duoserver running on :8080")
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-// helpers and shit
-// projects
+func must(err error) {
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+/* =======================
+   LOAD / SAVE
+======================= */
+
 func loadProjects() error {
-	file, err := os.Open("projects.json")
+	f, err := os.Open("projects.json")
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	return json.NewDecoder(file).Decode(&projectStore)
+	defer f.Close()
+	return json.NewDecoder(f).Decode(&projectStore)
 }
 
 func saveProjects() error {
-	file, err := os.Create("projects.json")
+	f, err := os.Create("projects.json")
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	enc := json.NewEncoder(file)
+	defer f.Close()
+	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
 	return enc.Encode(projectStore)
 }
 
-// streak
 func loadStreak() error {
-	file, err := os.Open("streak.json")
+	f, err := os.Open("streak.json")
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	return json.NewDecoder(file).Decode(&streak)
+	defer f.Close()
+	return json.NewDecoder(f).Decode(&streak)
 }
 
 func saveStreak() error {
-	file, err := os.Create("streak.json")
+	f, err := os.Create("streak.json")
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	return json.NewEncoder(file).Encode(streak)
+	defer f.Close()
+	return json.NewEncoder(f).Encode(streak)
 }
 
-// json thing to store in the server
-const dataFile = "data.json"
-
 func saveSubmissions() error {
-	file, err := os.Create(dataFile)
+	f, err := os.Create(dataFile)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ") // pretty JSON 😌
-	return encoder.Encode(submissions)
+	defer f.Close()
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	return enc.Encode(submissions)
 }
 
 func loadSubmissions() error {
-	file, err := os.Open(dataFile)
+	f, err := os.Open(dataFile)
 	if err != nil {
-		// file doesn't exist yet — totally fine
-		return nil
+		return nil // first run
 	}
-	defer file.Close()
-
-	return json.NewDecoder(file).Decode(&submissions)
+	defer f.Close()
+	return json.NewDecoder(f).Decode(&submissions)
 }
 
-//routes
-
-func submit(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed ", http.StatusMethodNotAllowed)
-		return
-
-	}
-
-	if r.Header.Get("Content-Type") != "application/json" {
-		http.Error(w, "expected application/json ", http.StatusBadRequest)
-		return
-
-	}
-
-	var payload Payload
-
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-
-	if err := decoder.Decode(&payload); err != nil {
-
-		http.Error(w, "invalid json:"+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	submissions[payload.Filename] = payload
-
-	err := saveSubmissions()
-	if err != nil {
-		http.Error(w, "failed to save data ", http.StatusInternalServerError)
-		return
-	}
-
-	//logging for now
-	fmt.Println("---submission---")
-	fmt.Println("file:", payload.Filename)
-	fmt.Println("typed chars:", (payload.Typed))
-	fmt.Println("pasted chars:", (payload.Pasted))
-	fmt.Println("real chars:", (payload.Real))
-
-	//respond
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"status": "received",
-	})
-
-}
-
-func taskDoneHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var body struct {
-		TaskID string `json:"task_id"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
-		return
-	}
-
-	if body.TaskID == "" {
-		http.Error(w, "task_id required", http.StatusBadRequest)
-		return
-	}
-
-	// just pick it up
-	fmt.Println("TASK DONE:", body.TaskID)
-
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("ok"))
-}
+/* =======================
+   BASIC ROUTES
+======================= */
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("welcome to duo ")
+	fmt.Fprintln(w, "welcome to duoserver")
 }
 
 func pingHandler(w http.ResponseWriter, r *http.Request) {
-
 	fmt.Fprintln(w, "pong")
-	fmt.Println(w, "pong")
+	fmt.Println("pong")
 }
 
 func dashboard(w http.ResponseWriter, r *http.Request) {
 	tmpl, err := template.ParseFiles("templates/dashboard.html")
 	if err != nil {
-		http.Error(w, "template error ", http.StatusInternalServerError)
-		fmt.Println("template error ")
+		http.Error(w, "template error", 500)
 		return
-
 	}
-
-	err = tmpl.Execute(w, submissions)
-	if err != nil {
-		http.Error(w, "render error ", http.StatusInternalServerError)
-		fmt.Println("render error ", err)
-
-	}
+	tmpl.Execute(w, submissions)
 }
 
-//api which will send data
+/* =======================
+   PLUGIN ROUTES
+======================= */
 
-func projectListHandler(w http.ResponseWriter, r *http.Request) {
+func submit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
+	if !strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+		http.Error(w, "expected application/json", 400)
+		return
+	}
+
+	var p Payload
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+
+	if err := dec.Decode(&p); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+
+	submissions[p.Filename] = p
+	must(saveSubmissions())
+
+	fmt.Println("submission:", p.Filename)
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(projectStore)
+	json.NewEncoder(w).Encode(map[string]string{"status": "received"})
 }
 
-//tasklist
-
-func taskListHandler(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		ProjectID string `json:"project_id"`
-		TaskID    string `json:"task_id"`
-		Done      bool   `json:"done"`
+// todo -> checking ONLY
+func checkme(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
 	}
 
+	var req CheckMeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid json", 400)
+		return
+	}
+
+	if req.ProjectID == "" || req.TaskID == "" {
+		http.Error(w, "project_id and task_id required", 400)
 		return
 	}
 
@@ -273,9 +235,19 @@ func taskListHandler(w http.ResponseWriter, r *http.Request) {
 		if p.ID == req.ProjectID {
 			for ti, t := range p.Tasks {
 				if t.ID == req.TaskID {
-					projectStore.Projects[pi].Tasks[ti].Done = req.Done
-					saveProjects()
-					w.Write([]byte("ok"))
+
+					if t.Status == "" {
+						projectStore.Projects[pi].Tasks[ti].Status = "todo"
+					}
+
+					if projectStore.Projects[pi].Tasks[ti].Status == "todo" {
+						projectStore.Projects[pi].Tasks[ti].Status = "checking"
+						must(saveProjects())
+						fmt.Fprintln(w, "submitted for checking")
+						return
+					}
+
+					fmt.Fprintln(w, "already submitted")
 					return
 				}
 			}
@@ -285,7 +257,14 @@ func taskListHandler(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "task not found", 404)
 }
 
-// abouttask
+/* =======================
+   API ROUTES
+======================= */
+
+func projectListHandler(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(projectStore)
+}
+
 func aboutTaskHandler(w http.ResponseWriter, r *http.Request) {
 	pid := r.URL.Query().Get("project")
 	tid := r.URL.Query().Get("task")
@@ -304,63 +283,19 @@ func aboutTaskHandler(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "task not found", 404)
 }
 
-// taskstatus
 func taskStatusHandler(w http.ResponseWriter, r *http.Request) {
-	status := make(map[string]map[string]bool)
+	out := make(map[string]map[string]string)
 
 	for _, p := range projectStore.Projects {
-		status[p.ID] = make(map[string]bool)
+		out[p.ID] = make(map[string]string)
 		for _, t := range p.Tasks {
-			status[p.ID][t.ID] = t.Done
+			out[p.ID][t.ID] = t.Status
 		}
 	}
 
-	json.NewEncoder(w).Encode(status)
+	json.NewEncoder(w).Encode(out)
 }
 
-// streakstatus
 func streakStatusHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(streak)
-}
-
-//checking from todo to checking
-
-func checkme(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req CheckMeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
-		return
-	}
-
-	data, err := loadProjects()
-	if err != nil {
-		http.Error(w, "failed to load projects", 500)
-		return
-	}
-
-	for pi, project := range data.Projects {
-		if project.ID == req.ProjectID {
-			for ti, task := range project.Tasks {
-				if task.ID == req.TaskID {
-
-					if task.Status == "todo" {
-						data.Projects[pi].Tasks[ti].Status = "checking"
-						saveProjects(data)
-						fmt.Fprintln(w, "submitted for checking")
-						return
-					}
-
-					fmt.Fprintln(w, "already submitted")
-					return
-				}
-			}
-		}
-	}
-
-	http.Error(w, "task not found", 404)
 }

@@ -8,13 +8,13 @@
           "id": "jsx-1",
           "title": "JSX Intro",
           "description": "Learn JSX syntax",
-          "status": false
+          "status": "todo"
         },
         {
           "id": "hooks-1",
           "title": "useState",
           "description": "Learn useState hook",
-          "status": false
+          "status": "todo"
         }
       ]
     }
